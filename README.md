@@ -4,21 +4,52 @@ An open-source C++ application for controlling the keyboard backlight on Clevo-b
 
 ## Project status
 
-Planning and Linux hardware-interface research. The application is not implemented yet, and no device support is claimed at this stage.
+The first Linux CLI implementation sets keyboard RGB color and brightness through the LED class sysfs interface. No effects or support beyond the verified control path are implemented yet.
 
 ## Initial target
 
 - Laptop: Monster/Clevo ABRA A5 V17.3
 - Platform: Linux
-- First interface: command-line tool
-- Initial controls: keyboard color and brightness
+- Interface: command-line tool
+- Controls: keyboard RGB color and brightness
 
-A desktop interface and support for other operating systems or laptop models may be considered after the initial control path is verified. Untested devices will not be described as supported.
+## Hardware interface
 
-## Design approach
+On the verified machine, the TUXEDO `tuxedo_keyboard` driver exposes the keyboard LED at `/sys/class/leds/rgb:kbd_backlight`:
 
-The application will keep its user-facing controls separate from operating-system-specific hardware access. Hardware writes will use a verified control interface; unknown embedded-controller values will not be written directly.
+- RGB channels, in red/green/blue order: `multi_intensity`
+- Brightness: `brightness`
+- Brightness limit: `max_brightness`
+
+The CLI writes only these LED class attributes; it does not write unknown embedded-controller values. Writes require permission to the relevant sysfs attributes. The observed files are root-owned, so use `sudo` for now. Effects and a normal-user permission mechanism are not implemented.
 
 ## Building
 
-The project is not buildable yet. Build and usage instructions will be added with the first working implementation.
+Requires CMake and a C++17 compiler:
+
+```sh
+cmake -S . -B build
+cmake --build build
+```
+
+## Usage
+
+Set color (RGB channels are 0–255):
+
+```sh
+sudo ./build/clevo-rgb --color 84 106 202
+```
+
+Set brightness (the CLI reads the device's `max_brightness` and checks the requested range):
+
+```sh
+sudo ./build/clevo-rgb --brightness 128
+```
+
+Set both:
+
+```sh
+sudo ./build/clevo-rgb --color 255 0 0 --brightness 128
+```
+
+Run `./build/clevo-rgb --help` for options. `--device-dir PATH` selects another LED sysfs directory and can also point to a temporary directory for testing.
