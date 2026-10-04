@@ -1,0 +1,33 @@
+# CMake build directories and generated files
+/build/
+/cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+
+# Compiled artifacts
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.pdb
+
+# IDE and editor state
+.idea/
+.vs/
+*.user
+*.user.*
+
+# Generated packages and logs
+/dist/
+*.log
+
+# Operating-system files
+.DS_Store
+Thumbs.db
