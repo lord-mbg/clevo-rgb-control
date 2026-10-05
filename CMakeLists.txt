@@ -3,7 +3,17 @@ project(clevo_rgb_control LANGUAGES CXX)
 
 find_package(Threads REQUIRED)
 
-add_executable(clevo-rgb src/main.cpp src/effects.cpp src/service.cpp)
+add_executable(clevo-rgb src/main.cpp src/effects.cpp src/service.cpp src/profiles.cpp)
 target_link_libraries(clevo-rgb PRIVATE Threads::Threads)
 target_compile_features(clevo-rgb PRIVATE cxx_std_17)
 target_compile_options(clevo-rgb PRIVATE -Wall -Wextra -Wpedantic)
+
+include(CTest)
+if(BUILD_TESTING)
+    find_package(Python3 COMPONENTS Interpreter)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME profile-boundaries
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_profiles.py"
+                    "$<TARGET_FILE:clevo-rgb>")
+    endif()
+endif()

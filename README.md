@@ -6,6 +6,8 @@ An open-source C++ application for controlling the keyboard backlight on Clevo-b
 
 The Linux CLI controls keyboard RGB color and brightness through the LED class sysfs interface. Single-color breathing, rainbow cycling, and two-color transitions have been confirmed on the target keyboard by the user. Effects now start as detached systemd services by default; color-changing breathing, service replacement/stopping, and restoration have been exercised with temporary LED files and a real systemd user manager.
 
+Named lighting profiles can now be saved, listed, applied, and deleted. Persistence and foreground/background application have been exercised with temporary configurations/LED files and a real systemd user manager. The privileged `sudo --profile` lookup has not yet been exercised here.
+
 ## Initial target
 
 - Laptop: Monster/Clevo ABRA A5 V17.3
@@ -53,6 +55,35 @@ Set both:
 ```sh
 sudo ./build/clevo-rgb --color 255 0 0 --brightness 128
 ```
+
+## Profiles
+
+Save lighting settings without changing the keyboard or starting a service:
+
+```sh
+# Save as the normal user (no sudo).
+./build/clevo-rgb --save-profile calisma --effect breathe \
+  --color 0 0 255 --to-color 128 0 255 --brightness 180 --period-ms 6000
+
+./build/clevo-rgb --save-profile gece --color 84 106 202 --brightness 40
+
+./build/clevo-rgb --list-profiles
+
+# Apply the stored settings; an effect starts detached, a static profile writes once.
+sudo ./build/clevo-rgb --profile calisma
+sudo ./build/clevo-rgb --profile gece
+
+sudo ./build/clevo-rgb --stop
+./build/clevo-rgb --delete-profile gece
+```
+
+- Profiles store effect, explicit color/target or breathing palette, optional brightness, period, and optional duration. Omitted brightness remains device-dependent at application time; saving does not read the current keyboard state.
+- Saving the same name replaces its complete settings atomically. Invalid settings leave the previous record intact.
+- Names: 1–64 ASCII letters/digits/`-`/`_`, starting with a letter or digit. Use names such as `calisma`, not filesystem paths.
+- Storage: `$XDG_CONFIG_HOME/clevo-rgb/profiles/` when that variable is an absolute path; otherwise `$HOME/.config/clevo-rgb/profiles/`. Files are private (`0600`), with a versioned plain-text lighting format. Symlinked profile files/directories and wrong owners are rejected.
+- `sudo --profile` resolves the invoking user's home via `SUDO_UID`, not root's `HOME`. Save/delete must run without sudo. If using a custom XDG directory, preserve `XDG_CONFIG_HOME` explicitly when applying with sudo; otherwise the user's default `.config` directory is used. Direct root use without a non-root `SUDO_UID` uses root's own store.
+- `--profile NAME` permits `--device-dir PATH` and `--foreground` (effects only), not lighting overrides. To change a profile, save it again with the complete desired settings.
+- Device paths, foreground/background mode, and management commands are never stored. Detached workers receive resolved lighting arguments; changing or deleting a profile does not change an already running effect.
 
 ## Effects
 
@@ -119,9 +150,17 @@ rm -r "$device"
 
 Run `./build/clevo-rgb --help` for options. `--device-dir PATH` selects another LED sysfs directory and can also point to a temporary directory for testing.
 
+With Python 3 available at CMake configuration time, run the isolated profile boundary regressions:
+
+```sh
+ctest --test-dir build --output-on-failure
+```
+
+These checks use temporary configuration/LED files and do not write to the physical keyboard or require a running systemd manager.
+
 ## Planned: camera-measured color palette
 
-Agreed plan; not implemented yet. Tilt the laptop lid so its camera can see the illuminated keyboard, then automate RGB changes and capture images to build a practical measured palette.
+Agreed plan; not implemented yet and deferred until after profile/daily-use controls. Tilt the laptop lid so its camera can see the illuminated keyboard, then automate RGB changes and capture images to build a practical measured palette.
 
 1. Confirm that a sample image resolves illuminated key legends. Fix camera/lid position, keyboard brightness, and ambient lighting; keep screen illumination out of the measurement.
 2. Lock camera exposure, gain, and white balance where supported; avoid clipped highlights. Select a fixed illuminated-key region rather than averaging the whole image.

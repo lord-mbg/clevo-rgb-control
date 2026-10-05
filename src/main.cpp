@@ -1,4 +1,5 @@
 #include "effects.h"
+#include "profiles.h"
 #include "service.h"
 
 #include <cerrno>
@@ -29,11 +30,19 @@ struct Options {
     bool foreground{false};
     bool stop{false};
     bool list_colors{false};
+    std::string profile;
+    std::string save_profile;
+    std::string delete_profile;
+    bool list_profiles{false};
+    bool has_device{false};
 };
 
 void print_usage(std::ostream& out) {
     out << "Usage: clevo-rgb [--device-dir PATH] [--color RED GREEN BLUE] [--brightness VALUE]\n"
         << "       clevo-rgb --effect breathe|cycle|transition [effect options]\n"
+        << "       clevo-rgb --save-profile NAME [lighting options]\n"
+        << "       clevo-rgb --profile NAME [--device-dir PATH] [--foreground]\n"
+        << "       clevo-rgb --list-profiles | --delete-profile NAME\n"
         << "\n"
         << "Color channels: 0..255; brightness: 0..max_brightness.\n"
         << "Effects start a detached systemd service by default; --stop restores and stops it.\n"
@@ -45,6 +54,9 @@ void print_usage(std::ostream& out) {
         << "--period-ms N: full cycle/breath, 100..3600000 (default 3000).\n"
         << "--duration-ms N: stop after N milliseconds (default: until --stop).\n"
         << "Effects restore previous color/brightness on completion or graceful stop.\n"
+        << "Save profiles without touching hardware; saving the same name replaces its settings.\n"
+        << "Profiles store lighting only, not device paths or foreground/background mode.\n"
+        << "Save/delete without sudo; sudo --profile uses the invoking user's profiles.\n"
         << "Default device: " << kDefaultDeviceDir << "\n"
         << "--device-dir is intended for alternate LED devices and testing.\n";
 }
@@ -81,9 +93,19 @@ std::optional<Options> parse_options(int argc, char** argv) {
         if (arg == "--foreground") { options.foreground = true; continue; }
         if (arg == "--stop") { options.stop = true; continue; }
         if (arg == "--list-colors") { options.list_colors = true; continue; }
+        if (arg == "--list-profiles") { options.list_profiles = true; continue; }
+        if (arg == "--profile" || arg == "--save-profile" || arg == "--delete-profile") {
+            if (!require_argument(argc, i + 1, arg)) return std::nullopt;
+            std::string& name = arg == "--profile" ? options.profile
+                                : arg == "--save-profile" ? options.save_profile : options.delete_profile;
+            name = argv[++i];
+            if (name.empty()) { std::cerr << "Profile name must not be empty.\n"; return std::nullopt; }
+            continue;
+        }
         if (arg == "--device-dir") {
             if (!require_argument(argc, i + 1, arg)) return std::nullopt;
             options.device_dir = argv[++i];
+            options.has_device = true;
             if (options.device_dir.empty()) {
                 std::cerr << "Device directory must not be empty.\n";
                 return std::nullopt;
@@ -168,14 +190,28 @@ std::optional<Options> parse_options(int argc, char** argv) {
 
     if (!options.show_help) {
         const auto& effect = options.effect;
-        if ((options.stop || options.list_colors) &&
-            (has_setting || options.foreground || options.has_period || options.has_duration ||
-             (options.stop && options.list_colors))) {
-            std::cerr << "--stop and --list-colors must be used alone.\n";
+        const unsigned int management = static_cast<unsigned int>(options.stop) +
+                                        static_cast<unsigned int>(options.list_colors) +
+                                        static_cast<unsigned int>(options.list_profiles) +
+                                        static_cast<unsigned int>(!options.delete_profile.empty());
+        if (management > 0 &&
+            (management > 1 || has_setting || options.foreground || options.has_period || options.has_duration ||
+             !options.profile.empty() || !options.save_profile.empty())) {
+            std::cerr << "Management commands must be used alone.\n";
+            return std::nullopt;
+        }
+        if (!options.profile.empty() &&
+            (has_setting || options.has_period || options.has_duration || !options.save_profile.empty())) {
+            std::cerr << "--profile accepts only --device-dir and --foreground, not lighting overrides.\n";
+            return std::nullopt;
+        }
+        if (!options.save_profile.empty() && (options.foreground || options.has_device)) {
+            std::cerr << "Saving a profile accepts lighting settings, not runtime device/mode options.\n";
             return std::nullopt;
         }
         if (effect.name.empty() &&
-            (effect.to || !effect.palette.empty() || options.foreground || options.has_period || options.has_duration)) {
+            (effect.to || !effect.palette.empty() || (options.foreground && options.profile.empty()) ||
+             options.has_period || options.has_duration)) {
             std::cerr << "Effect options require --effect.\n";
             return std::nullopt;
         }
@@ -197,14 +233,44 @@ std::optional<Options> parse_options(int argc, char** argv) {
         }
     }
 
-    if (!options.show_help && !options.stop && !options.list_colors && !has_setting) {
-        std::cerr << "Specify --color, --brightness, or --effect.\n";
+    if (!options.show_help && !options.stop && !options.list_colors && !options.list_profiles &&
+        options.delete_profile.empty() && options.profile.empty() && !has_setting) {
+        std::cerr << "Specify lighting settings or a profile command.\n";
         return std::nullopt;
     }
     if (options.red) options.effect.from = {*options.red, *options.green, *options.blue};
     options.effect.has_from = options.red.has_value();
     options.effect.brightness = options.brightness;
     return options;
+}
+
+// One normalized representation is used for persistence and the detached worker.
+std::vector<std::string> lighting_arguments(const Options& options) {
+    std::vector<std::string> args;
+    args.reserve(16 + options.effect.palette.size() * 4);
+    const auto add_color = [&](const char* flag, const std::array<int, 3>& rgb) {
+        args.emplace_back(flag);
+        for (int channel : rgb) args.push_back(std::to_string(channel));
+    };
+    if (!options.effect.name.empty()) args.insert(args.end(), {"--effect", options.effect.name});
+    if (options.red) add_color("--color", {*options.red, *options.green, *options.blue});
+    if (options.effect.to) add_color("--to-color", *options.effect.to);
+    for (const auto& rgb : options.effect.palette) add_color("--palette", rgb);
+    if (options.brightness) args.insert(args.end(), {"--brightness", std::to_string(*options.brightness)});
+    if (!options.effect.name.empty()) {
+        args.insert(args.end(), {"--period-ms", std::to_string(options.effect.period_ms)});
+        if (options.effect.duration_ms)
+            args.insert(args.end(), {"--duration-ms", std::to_string(options.effect.duration_ms)});
+    }
+    return args;
+}
+
+std::vector<char*> argument_pointers(std::vector<std::string>& arguments) {
+    std::vector<char*> pointers;
+    pointers.reserve(arguments.size() + 1);
+    for (auto& argument : arguments) pointers.push_back(argument.data());
+    pointers.push_back(nullptr);
+    return pointers;
 }
 
 bool can_write(const std::filesystem::path& path) {
@@ -233,14 +299,40 @@ bool write_value(const std::filesystem::path& path, const std::string& value) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    const auto parsed = parse_options(argc, argv);
+    auto parsed = parse_options(argc, argv);
     if (!parsed) {
         print_usage(std::cerr);
         return 2;
     }
+    if (!parsed->show_help && !parsed->profile.empty()) {
+        auto arguments = load_profile(parsed->profile);
+        if (!arguments) return 1;
+        arguments->insert(arguments->begin(), {argv[0], "--device-dir", parsed->device_dir.string()});
+        if (parsed->foreground) arguments->emplace_back("--foreground");
+        auto pointers = argument_pointers(*arguments);
+        parsed = parse_options(static_cast<int>(arguments->size()), pointers.data());
+        if (!parsed) return 2;
+    }
     const Options& options = *parsed;
     if (options.show_help) {
         print_usage(std::cout);
+        return 0;
+    }
+    if (!options.save_profile.empty()) {
+        if (!save_profile(options.save_profile, lighting_arguments(options))) return 1;
+        std::cout << "Saved profile " << options.save_profile << ".\n";
+        return 0;
+    }
+    if (options.list_profiles) {
+        const auto names = list_profiles();
+        if (!names) return 1;
+        if (names->empty()) std::cout << "No saved profiles.\n";
+        for (const auto& name : *names) std::cout << name << '\n';
+        return 0;
+    }
+    if (!options.delete_profile.empty()) {
+        if (!delete_profile(options.delete_profile)) return 1;
+        std::cout << "Deleted profile " << options.delete_profile << ".\n";
         return 0;
     }
     if (options.list_colors) {
@@ -256,7 +348,10 @@ int main(int argc, char** argv) {
         if (options.foreground) return run_effect(options.device_dir, options.effect);
         const int checked = validate_effect(options.device_dir, options.effect);
         if (checked != 0) return checked;
-        return start_background(options.device_dir, argc, argv);
+        auto arguments = lighting_arguments(options);
+        arguments.insert(arguments.begin(), argv[0]);
+        auto pointers = argument_pointers(arguments);
+        return start_background(options.device_dir, static_cast<int>(arguments.size()), pointers.data());
     }
 
     const auto color_path = options.device_dir / "multi_intensity";
