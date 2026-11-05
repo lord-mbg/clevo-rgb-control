@@ -6,7 +6,9 @@ An open-source C++ application for controlling the keyboard backlight on Clevo-b
 
 The Linux CLI controls keyboard RGB color and brightness through the LED class sysfs interface. Single-color breathing, rainbow cycling, and two-color transitions have been confirmed on the target keyboard by the user. Effects now start as detached systemd services by default; color-changing breathing, service replacement/stopping, and restoration have been exercised with temporary LED files and a real systemd user manager.
 
-Named lighting profiles can now be saved, listed, applied, and deleted. Persistence and foreground/background application have been exercised with temporary configurations/LED files and a real systemd user manager. The privileged `sudo --profile` lookup has not yet been exercised here.
+Named lighting profiles can now be saved, listed, applied, and deleted. Persistence and foreground/background application have been exercised with temporary configurations/LED files and a real systemd user manager. The user confirmed that saving a profile as the normal user and applying it to the target keyboard with `sudo --profile` works.
+
+The Qt Quick desktop panel provides independent transition start/end colors, animated previews for all effect modes at the selected speed and brightness, and profile management. Selecting a GUI-compatible profile loads its colors, brightness, effect, period, and preview into the editor without touching the keyboard. Profiles with CLI-only palettes or durations remain applicable through **Profili Uygula**, but are not loaded into the editor. Native UI interactions have been exercised against temporary LED/configuration files, including all three effects under a real systemd user manager. Desktop Polkit authorization on the physical keyboard has not yet been exercised.
 
 ## Initial target
 
@@ -23,17 +25,39 @@ On the verified machine, the TUXEDO `tuxedo_keyboard` driver exposes the keyboar
 - Brightness: `brightness`
 - Brightness limit: `max_brightness`
 
-The CLI writes only these LED class attributes; it does not write unknown embedded-controller values. Writes require permission to the relevant sysfs attributes. The observed files are root-owned, so use `sudo` for now. A normal-user permission mechanism is not implemented.
+The CLI writes only these LED class attributes; it does not write unknown embedded-controller values. Writes require permission to the relevant sysfs attributes. The observed files are root-owned, so CLI writes use `sudo`; the desktop panel invokes the CLI through `pkexec`. Direct normal-user sysfs permissions are not configured.
 
 ## Building
 
-Requires CMake and a C++17 compiler:
+Requires CMake and a C++17 compiler. Qt 6.5 or newer with Quick, QuickControls2, and Widgets development files enables the optional desktop target; the runtime also needs the Qt Quick Controls Basic, Layouts, Dialogs, and Shapes QML modules. If Qt is unavailable, CMake builds only the CLI. To explicitly disable the desktop target, configure with `-DBUILD_GUI=OFF`.
 
 Detached operation also requires a running systemd manager with `systemd-run` and `systemctl`. Root invocations use the system manager; ordinary users use their user manager. `--foreground` runs an effect without systemd. The executable must remain at its original path for future service launches; no service installation or boot autostart is performed.
 
 ```sh
 cmake -S . -B build
 cmake --build build
+```
+
+## Desktop panel
+
+```sh
+./build/clevo-rgb-ui
+```
+
+Run the panel as the normal desktop user, **not with sudo**. Keep `clevo-rgb-ui` and `clevo-rgb` together in the build directory. The panel reads LED state on startup; **Yenile** rereads it without replacing unsaved editor settings. The keyboard illustration previews the chosen mode, colors, speed, and brightness, not live device output.
+
+- Editing controls does not write hardware. **Uygula** applies the chosen color/brightness or starts the selected effect. In **Geçiş** mode the start and end colors are independently editable in the color card. The period is a complete effect cycle in milliseconds.
+- Selecting a saved profile loads supported settings into the editor and preview; the keyboard is unchanged until **Profili Uygula** or **Uygula**. Profiles using CLI-only palettes or finite durations are not loaded into the editor (a status message explains why); **Profili Uygula** still applies their original settings.
+- **Efekti Durdur** stops the detached worker and restores its initial values. Closing the panel does not stop an already detached effect.
+- With a system tray, closing the window hides it; the tray icon or **Göster/Gizle** menu restores/hides it, and **Çıkış** quits. If no tray is available when starting, closing the window quits normally. No boot autostart is installed.
+- Sysfs actions use `pkexec`, so Polkit and an active desktop authentication agent are required. Authorization may prompt for a password; cancellation and CLI failures appear in the status area. Hover over the status text to read the full message.
+- Profile save/list/delete run as the desktop user, with the same storage and validation as the CLI. Existing-profile overwrite and deletion require confirmation. Applying a profile resolves that user's settings before elevation; it does not depend on `SUDO_UID` or root's configuration.
+- No device is required to save or manage profiles. Device-dependent apply buttons are disabled if the LED attributes cannot be read. There is no boot autostart or live effect-state monitor.
+
+For a hardware-free desktop run, point `--device-dir` at a temporary directory containing `multi_intensity`, `brightness`, and `max_brightness`, as in the validation example below. Writable temporary directories run CLI operations without elevation under the systemd user manager:
+
+```sh
+./build/clevo-rgb-ui --device-dir /path/to/temporary-led-directory
 ```
 
 ## Usage
@@ -157,16 +181,3 @@ ctest --test-dir build --output-on-failure
 ```
 
 These checks use temporary configuration/LED files and do not write to the physical keyboard or require a running systemd manager.
-
-## Planned: camera-measured color palette
-
-Agreed plan; not implemented yet and deferred until after profile/daily-use controls. Tilt the laptop lid so its camera can see the illuminated keyboard, then automate RGB changes and capture images to build a practical measured palette.
-
-1. Confirm that a sample image resolves illuminated key legends. Fix camera/lid position, keyboard brightness, and ambient lighting; keep screen illumination out of the measurement.
-2. Lock camera exposure, gain, and white balance where supported; avoid clipped highlights. Select a fixed illuminated-key region rather than averaging the whole image.
-3. Capture repeated frames at the same RGB setting to estimate measurement noise. Include black/off as an ambient reference.
-4. Start with a coarse three-dimensional RGB grid, for example channel levels 0, 64, 128, 192, and 255 (125 combinations). Wait for the image to settle after each change, then summarize several frames robustly.
-5. Compare measured colors using a color-distance metric such as Lab/Delta E. Subdivide intervals with differences reliably above the noise floor; also sample intermediate points to check for missed changes. Stop at the noise floor or an input step of one.
-6. Cluster similar measured results and retain representative RGB inputs for effect palettes. Save capture settings and RGB-to-measurement associations so results can be reproduced.
-
-The result describes colors distinguishable by this camera under these conditions, not the keyboard's absolute color count or a calibrated human-perception gamut. Visually compare representative samples before adopting the palette.

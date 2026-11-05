@@ -1,0 +1,6 @@
+singleton Theme 1.0 Theme.qml
+StyledButton 1.0 StyledButton.qml
+StyledField 1.0 StyledField.qml
+StyledSpinBox 1.0 StyledSpinBox.qml
+StyledCombo 1.0 StyledCombo.qml
+KeyboardPreview 1.0 KeyboardPreview.qml
