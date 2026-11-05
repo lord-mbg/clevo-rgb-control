@@ -38,13 +38,24 @@ cmake -S . -B build
 cmake --build build
 ```
 
+### Installing the binaries
+
+The build directory is writable by the developer. **Do not run its CLI with `sudo` or `pkexec` on real hardware.** After reviewing and testing a build, install both binaries into a root-owned directory (requires administrator authorization):
+
+```sh
+sudo install -d -o root -g root -m 0755 /opt/clevo-rgb-control
+sudo install -o root -g root -m 0755 build/clevo-rgb build/clevo-rgb-ui /opt/clevo-rgb-control/
+```
+
+Both `/opt/clevo-rgb-control` and its binaries must remain root-owned and not writable by normal users. Rebuilds do **not** update the installed copies; review, test, and reinstall both binaries when updating, then restart the panel. Stop a running detached effect before replacing the CLI it executes. Installing a trusted build narrows binary-substitution risk; it does not make a compromised user session or arbitrary Polkit approvals safe.
+
 ## Desktop panel
 
 ```sh
-./build/clevo-rgb-ui
+/opt/clevo-rgb-control/clevo-rgb-ui
 ```
 
-Run the panel as the normal desktop user, **not with sudo**. Keep `clevo-rgb-ui` and `clevo-rgb` together in the build directory. The panel reads LED state on startup; **Yenile** rereads it without replacing unsaved editor settings. It separately queries the matching systemd scope for a detached effect at startup, after operations, on refresh, and about every five seconds. **Efekt çalışıyor**, **Efekt yok**, and **Efekt bilinmiyor** distinguish running, inactive, and unavailable/failed status queries. The keyboard illustration previews the chosen mode, colors, speed, and brightness, not live device output.
+Run the installed panel as the normal desktop user, **not with sudo**. Keep the installed `clevo-rgb-ui` and `clevo-rgb` together in the root-owned directory; the panel finds the CLI beside itself. The panel reads LED state on startup; **Yenile** rereads it without replacing unsaved editor settings. It separately queries the matching systemd scope for a detached effect at startup, after operations, on refresh, and about every five seconds. **Efekt çalışıyor**, **Efekt yok**, and **Efekt bilinmiyor** distinguish running, inactive, and unavailable/failed status queries. The keyboard illustration previews the chosen mode, colors, speed, and brightness, not live device output.
 
 - Editing controls does not write hardware. **Uygula** applies the chosen color/brightness or starts the selected effect. In **Geçiş** mode the start and end colors are independently editable in the color card. The period is a complete effect cycle in milliseconds.
 - Selecting a saved profile loads supported settings into the editor and preview; the keyboard is unchanged until **Profili Uygula** or **Uygula**. Profiles using CLI-only palettes or finite durations are not loaded into the editor (a status message explains why); **Profili Uygula** still applies their original settings.
@@ -57,19 +68,19 @@ Run the panel as the normal desktop user, **not with sudo**. Keep `clevo-rgb-ui`
 For a hardware-free desktop run, point `--device-dir` at a temporary directory containing `multi_intensity`, `brightness`, and `max_brightness`, as in the validation example below. Writable temporary directories run CLI operations without elevation under the systemd user manager:
 
 ```sh
-./build/clevo-rgb-ui --device-dir /path/to/temporary-led-directory
+/opt/clevo-rgb-control/clevo-rgb-ui --device-dir /path/to/temporary-led-directory
 ```
 
 ### Starting with the desktop session
 
-An XDG autostart entry launches the panel as the signed-in user, without touching the keyboard or requesting privilege at login. On this workstation, `~/.config/autostart/clevo-rgb-ui.desktop` points to the built panel. For another installation, use its own absolute executable path in both fields:
+An XDG autostart entry launches the installed panel as the signed-in user, without touching the keyboard or requesting privilege at login. On this workstation, `~/.config/autostart/clevo-rgb-ui.desktop` points to the root-owned panel. For another installation, use its own absolute installed executable path in both fields:
 
 ```ini
 [Desktop Entry]
 Type=Application
 Name=Clevo RGB Control
-Exec=/absolute/path/to/clevo-rgb-control/build/clevo-rgb-ui
-TryExec=/absolute/path/to/clevo-rgb-control/build/clevo-rgb-ui
+Exec=/opt/clevo-rgb-control/clevo-rgb-ui
+TryExec=/opt/clevo-rgb-control/clevo-rgb-ui
 Terminal=false
 ```
 
@@ -80,19 +91,19 @@ This starts the panel at graphical login, **not** the RGB effect at boot. Effect
 Set color (RGB channels are 0–255):
 
 ```sh
-sudo ./build/clevo-rgb --color 84 106 202
+sudo /opt/clevo-rgb-control/clevo-rgb --color 84 106 202
 ```
 
 Set brightness (the CLI reads the device's `max_brightness` and checks the requested range):
 
 ```sh
-sudo ./build/clevo-rgb --brightness 128
+sudo /opt/clevo-rgb-control/clevo-rgb --brightness 128
 ```
 
 Set both:
 
 ```sh
-sudo ./build/clevo-rgb --color 255 0 0 --brightness 128
+sudo /opt/clevo-rgb-control/clevo-rgb --color 255 0 0 --brightness 128
 ```
 
 ## Profiles
@@ -101,19 +112,19 @@ Save lighting settings without changing the keyboard or starting a service:
 
 ```sh
 # Save as the normal user (no sudo).
-./build/clevo-rgb --save-profile calisma --effect breathe \
+/opt/clevo-rgb-control/clevo-rgb --save-profile calisma --effect breathe \
   --color 0 0 255 --to-color 128 0 255 --brightness 180 --period-ms 6000
 
-./build/clevo-rgb --save-profile gece --color 84 106 202 --brightness 40
+/opt/clevo-rgb-control/clevo-rgb --save-profile gece --color 84 106 202 --brightness 40
 
-./build/clevo-rgb --list-profiles
+/opt/clevo-rgb-control/clevo-rgb --list-profiles
 
 # Apply the stored settings; an effect starts detached, a static profile writes once.
-sudo ./build/clevo-rgb --profile calisma
-sudo ./build/clevo-rgb --profile gece
+sudo /opt/clevo-rgb-control/clevo-rgb --profile calisma
+sudo /opt/clevo-rgb-control/clevo-rgb --profile gece
 
-sudo ./build/clevo-rgb --stop
-./build/clevo-rgb --delete-profile gece
+sudo /opt/clevo-rgb-control/clevo-rgb --stop
+/opt/clevo-rgb-control/clevo-rgb --delete-profile gece
 ```
 
 - Profiles store effect, explicit color/target or breathing palette, optional brightness, period, and optional duration. Omitted brightness remains device-dependent at application time; saving does not read the current keyboard state.
@@ -130,28 +141,28 @@ This keyboard has one RGB zone: all keys share the same color and brightness. Th
 
 ```sh
 # Breathe through the built-in palette; change colors while dark.
-sudo ./build/clevo-rgb --effect breathe --brightness 200
+sudo /opt/clevo-rgb-control/clevo-rgb --effect breathe --brightness 200
 
 # Alternate blue and red, one color per breath.
-sudo ./build/clevo-rgb --effect breathe --color 0 0 255 --to-color 255 0 0 --brightness 200
+sudo /opt/clevo-rgb-control/clevo-rgb --effect breathe --color 0 0 255 --to-color 255 0 0 --brightness 200
 
 # Custom breathing sequence: blue, violet, cyan, repeat.
-sudo ./build/clevo-rgb --effect breathe --palette 0 0 255 --palette 128 0 255 --palette 0 255 255
+sudo /opt/clevo-rgb-control/clevo-rgb --effect breathe --palette 0 0 255 --palette 128 0 255 --palette 0 255 255
 
 # Explicit --color without --to-color keeps breathing in one color.
-sudo ./build/clevo-rgb --effect breathe --color 84 106 202 --brightness 200
+sudo /opt/clevo-rgb-control/clevo-rgb --effect breathe --color 84 106 202 --brightness 200
 
 # Smoothly cycle through the rainbow.
-sudo ./build/clevo-rgb --effect cycle --period-ms 6000
+sudo /opt/clevo-rgb-control/clevo-rgb --effect cycle --period-ms 6000
 
 # Fade from red to blue and back.
-sudo ./build/clevo-rgb --effect transition --color 255 0 0 --to-color 0 0 255
+sudo /opt/clevo-rgb-control/clevo-rgb --effect transition --color 255 0 0 --to-color 0 0 255
 
 # Run for ten seconds, then restore the previous settings.
-sudo ./build/clevo-rgb --effect cycle --duration-ms 10000
+sudo /opt/clevo-rgb-control/clevo-rgb --effect cycle --duration-ms 10000
 
 # Stop the background effect and restore its initial color/brightness.
-sudo ./build/clevo-rgb --stop
+sudo /opt/clevo-rgb-control/clevo-rgb --stop
 ```
 
 - Commands return after the detached service has initialized its device. The terminal may then be closed. One managed effect exists per system/user scope; a new effect synchronously stops and restores the previous one before starting. Static color/brightness commands also stop the managed effect before applying their settings. Keep the same privilege scope for start and stop (`sudo` on the target keyboard).
@@ -166,7 +177,7 @@ sudo ./build/clevo-rgb --stop
 
 ### Color selection and bounded transitions
 
-`./build/clevo-rgb --list-colors` lists 13 coarse nominal samples: 12 fully saturated hue steps plus white. Use their numeric values with `--color`, `--to-color`, or repeated `--palette` arguments.
+`/opt/clevo-rgb-control/clevo-rgb --list-colors` lists 13 coarse nominal samples: 12 fully saturated hue steps plus white. Use their numeric values with `--color`, `--to-color`, or repeated `--palette` arguments.
 
 The 8-bit RGB interface accepts 256³ = 16,777,216 combinations, including black/off. This is a count of numeric inputs, not a measured number of distinct visible keyboard colors. LED response, channel balance, brightness, keycaps, and vision affect the result; adjacent numeric values need not look different. The coarse palette is a starting point for visual comparison at a fixed brightness, not a calibrated hardware gamut or exhaustive list.
 
@@ -187,7 +198,7 @@ cat "$device/multi_intensity" "$device/brightness"
 rm -r "$device"
 ```
 
-Run `./build/clevo-rgb --help` for options. `--device-dir PATH` selects another LED sysfs directory and can also point to a temporary directory for testing.
+Run `/opt/clevo-rgb-control/clevo-rgb --help` for installed options. The `./build/clevo-rgb --device-dir PATH` example above uses a writable temporary device only; do not elevate the build binary for real hardware.
 
 With Python 3 available at CMake configuration time, the isolated profile boundary regression is registered. With Qt Test available, the GUI interaction regression also runs with a real controller, QML, CLI, and temporary LED/profile files; its systemd query is isolated so it cannot stop a user's service:
 

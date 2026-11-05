@@ -16,6 +16,7 @@ The CLI in `src/main.cpp`, `src/effects.cpp`, `src/service.cpp`, and `src/profil
 - `.gitignore` excludes build outputs and native artifacts.
 - Build: `cmake -S . -B build && cmake --build build`.
 - Test: `ctest --test-dir build --output-on-failure`.
+- Hardware operations should use the root-owned CLI installed beside the GUI in `/opt/clevo-rgb-control/`; never elevate the user-writable `build/` copy. Rebuild, test, then install both binaries and restart the panel when updating.
 - To build without Qt: configure with `-DBUILD_GUI=OFF`.
 
 ## Conventions & Verification
