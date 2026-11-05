@@ -21,6 +21,14 @@ ApplicationWindow {
     readonly property string selectedEffect: effectCombo.effectValue
     property alias periodMs: periodSpin.value
     property alias selectedBrightness: brightnessSlider.value
+    readonly property string effectStatusLabel:
+        controller.effectStatus === "active" ? "Efekt çalışıyor"
+        : controller.effectStatus === "inactive" ? "Efekt yok"
+        : "Efekt bilinmiyor"
+    readonly property color effectStatusColor:
+        controller.effectStatus === "active" ? Theme.success
+        : controller.effectStatus === "inactive" ? Theme.textSecondary
+        : Theme.warning
 
     // Keep color-derived controls legible against the dark surfaces.
     readonly property color _accent: {
@@ -65,7 +73,7 @@ ApplicationWindow {
                 id: confirmTitle
                 Layout.fillWidth: true
                 font.pixelSize: Theme.fontMd
-                font.weight:    Font.SemiBold
+                font.weight:    Font.DemiBold
                 color:  Theme.textPrimary
                 wrapMode: Text.Wrap
             }
@@ -176,6 +184,25 @@ ApplicationWindow {
                     }
                 }
 
+                // Detached effect service state (active / inactive / unknown).
+                Row {
+                    objectName: "effectStatusIndicator"
+                    spacing: Theme.spSm
+                    Rectangle {
+                        width: 7; height: 7; radius: 4
+                        anchors.verticalCenter: parent.verticalCenter
+                        color: mainWindow.effectStatusColor
+                        Behavior on color { ColorAnimation { duration: Theme.durMid } }
+                    }
+                    Text {
+                        objectName: "effectStatusLabel"
+                        text: mainWindow.effectStatusLabel
+                        font.pixelSize: Theme.fontSm
+                        color: Theme.textSecondary
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
+
                 // Refresh
                 StyledButton {
                     text:        "↻  Yenile"
@@ -184,7 +211,7 @@ ApplicationWindow {
                     implicitWidth: 96
                     onClicked: controller.refresh()
                     ToolTip.visible: hovered
-                    ToolTip.text:   "Aygıt durumunu yeniden oku"
+                    ToolTip.text:   "Aygıt ve efekt durumunu yeniden oku"
                     ToolTip.delay:  500
                 }
             }
@@ -234,7 +261,7 @@ ApplicationWindow {
                                 Text {
                                     text: effectCombo.effectValue === "transition" ? "Başlangıç Rengi" : "Renk Seçimi"
                                     font.pixelSize: Theme.fontMd
-                                    font.weight:    Font.SemiBold
+                                    font.weight:    Font.DemiBold
                                     color: Theme.textPrimary
                                 }
 
@@ -605,7 +632,7 @@ ApplicationWindow {
                                 Text {
                                     text: "Klavye Önizlemesi"
                                     font.pixelSize: Theme.fontMd
-                                    font.weight:    Font.SemiBold
+                                    font.weight:    Font.DemiBold
                                     color: Theme.textPrimary
                                 }
 
@@ -730,7 +757,7 @@ ApplicationWindow {
                                 Text {
                                     text: "Efekt"
                                     font.pixelSize: Theme.fontMd
-                                    font.weight:    Font.SemiBold
+                                    font.weight:    Font.DemiBold
                                     color: Theme.textPrimary
                                 }
 
@@ -829,7 +856,7 @@ ApplicationWindow {
                                 Text {
                                     text: "Profiller"
                                     font.pixelSize: Theme.fontMd
-                                    font.weight:    Font.SemiBold
+                                    font.weight:    Font.DemiBold
                                     color: Theme.textPrimary
                                 }
 
@@ -1076,12 +1103,17 @@ ApplicationWindow {
                     id: stopButton
                     objectName: "stopButton"
                     text: "Efekti Durdur"
-                    // stop() is valid regardless of deviceAvailable — recovers running service
-                    enabled: !controller.busy
+                    // Active and unknown remain actionable; inactive has nothing to stop.
+                    // Unknown must not claim restore succeeded beforehand.
+                    enabled: !controller.busy && controller.effectStatus !== "inactive"
                     accentColor: mainWindow._accent
                     onClicked: controller.stop()
                     ToolTip.visible: hovered
-                    ToolTip.text:   "Arka plan efektini durdur ve önceki ayarları geri yükle"
+                    ToolTip.text: controller.effectStatus === "active"
+                                  ? "Arka plan efektini durdur ve önceki ayarları geri yükle"
+                                  : controller.effectStatus === "unknown"
+                                    ? "Efekt durumu bilinmiyor; durdurmayı dene"
+                                    : "Çalışan arka plan efekti yok"
                     ToolTip.delay:  500
                 }
 

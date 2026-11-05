@@ -4,6 +4,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QStandardPaths>
+#include <QTimer>
 #include <QTextStream>
 #include <limits>
 #include <utility>
@@ -12,6 +13,7 @@
 Controller::Controller(QString cliPath, QString deviceDir, QObject* parent)
     : QObject(parent), m_cliPath(std::move(cliPath)), m_deviceDir(std::move(deviceDir)) {
     m_process.setProcessChannelMode(QProcess::MergedChannels);
+    m_statusProcess.setProcessChannelMode(QProcess::SeparateChannels);
     connect(&m_process, &QProcess::stateChanged, this, &Controller::busyChanged);
     connect(&m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         if (error == QProcess::FailedToStart)
@@ -23,12 +25,43 @@ Controller::Controller(QString cliPath, QString deviceDir, QObject* parent)
         if (code != 0 || exitStatus != QProcess::NormalExit) {
             setStatus(output.isEmpty() ? QStringLiteral("İşlem başarısız oldu veya yetkilendirme iptal edildi.")
                                       : output, true);
+            probeEffectStatus();
             return;
         }
         readDevice();
         if (readProfiles()) setStatus(m_successMessage);
+        probeEffectStatus();
     });
+    connect(&m_statusProcess, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
+        if (error == QProcess::FailedToStart)
+            setEffectStatus(QStringLiteral("unknown"));
+    });
+    connect(&m_statusProcess, qOverload<int, QProcess::ExitStatus>(&QProcess::finished), this,
+            [this](int code, QProcess::ExitStatus exitStatus) {
+        const QString state = QString::fromUtf8(m_statusProcess.readAllStandardOutput()).trimmed();
+        if (code != 0 || exitStatus != QProcess::NormalExit) {
+            setEffectStatus(QStringLiteral("unknown"));
+            return;
+        }
+        if (state == QLatin1String("active"))
+            setEffectStatus(QStringLiteral("active"));
+        else if (state == QLatin1String("inactive"))
+            setEffectStatus(QStringLiteral("inactive"));
+        else
+            setEffectStatus(QStringLiteral("unknown"));
+    });
+    m_effectStatusTimer.setInterval(5000);
+    connect(&m_effectStatusTimer, &QTimer::timeout, this, &Controller::probeEffectStatus);
+    m_effectStatusTimer.start();
     refresh();
+}
+
+Controller::~Controller() {
+    if (m_statusProcess.state() != QProcess::NotRunning) {
+        m_statusProcess.disconnect(this);
+        m_statusProcess.kill();
+        m_statusProcess.waitForFinished(1000);
+    }
 }
 
 void Controller::setStatus(const QString& message, bool error) {
@@ -81,6 +114,7 @@ bool Controller::readProfiles() {
 }
 
 void Controller::refresh() {
+    probeEffectStatus();
     if (busy()) return;
     readDevice();
     if (readProfiles())
@@ -121,6 +155,36 @@ QStringList Controller::lightingArguments(const QString& color, const QString& t
     return arguments;
 }
 
+bool Controller::needsPrivilegedCli() const {
+    // Same decision as hardware elevation: /sys or a non-writable brightness node
+    // means the detached effect lives under the system manager, not --user.
+    return m_deviceDir.startsWith(QLatin1String("/sys/")) ||
+           (::access(QFile::encodeName(m_deviceDir + QLatin1String("/brightness")).constData(), W_OK) != 0);
+}
+
+void Controller::setEffectStatus(const QString& status) {
+    if (m_effectStatus == status) return;
+    m_effectStatus = status;
+    emit effectStatusChanged();
+}
+
+void Controller::probeEffectStatus() {
+    if (m_statusProcess.state() != QProcess::NotRunning) return;
+    const QString systemctl = QStandardPaths::findExecutable(QStringLiteral("systemctl"));
+    if (systemctl.isEmpty()) {
+        setEffectStatus(QStringLiteral("unknown"));
+        return;
+    }
+    QStringList arguments;
+    if (!needsPrivilegedCli())
+        arguments << QStringLiteral("--user");
+    // Read-only query; never prompt for credentials merely to inspect ActiveState.
+    arguments << QStringLiteral("--no-ask-password") << QStringLiteral("show")
+              << QStringLiteral("--property=ActiveState") << QStringLiteral("--value")
+              << QStringLiteral("clevo-rgb-effect.service");
+    m_statusProcess.start(systemctl, arguments);
+}
+
 void Controller::run(QStringList arguments, bool hardware, const QString& successMessage) {
     if (busy()) return;
     if (!QFileInfo(m_cliPath).isExecutable()) {
@@ -131,12 +195,11 @@ void Controller::run(QStringList arguments, bool hardware, const QString& succes
     if (hardware) {
         // LED operations on sysfs use the system manager, as with sudo CLI invocations.
         // User-writable temporary device directories use the user manager for smoke runs.
-        const bool privileged = m_deviceDir.startsWith("/sys/") ||
-            (::access(QFile::encodeName(m_deviceDir + "/brightness").constData(), W_OK) != 0);
+        const bool privileged = needsPrivilegedCli();
         arguments.prepend(m_deviceDir);
-        arguments.prepend("--device-dir");
+        arguments.prepend(QStringLiteral("--device-dir"));
         if (privileged) {
-            program = QStandardPaths::findExecutable("pkexec");
+            program = QStandardPaths::findExecutable(QStringLiteral("pkexec"));
             if (program.isEmpty()) {
                 setStatus(QStringLiteral("pkexec bulunamadı. Polkit ve masaüstü yetkilendirme ajanı gerekiyor."), true);
                 return;

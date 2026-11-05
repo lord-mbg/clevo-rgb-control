@@ -8,7 +8,7 @@ The Linux CLI controls keyboard RGB color and brightness through the LED class s
 
 Named lighting profiles can now be saved, listed, applied, and deleted. Persistence and foreground/background application have been exercised with temporary configurations/LED files and a real systemd user manager. The user confirmed that saving a profile as the normal user and applying it to the target keyboard with `sudo --profile` works.
 
-The Qt Quick desktop panel provides independent transition start/end colors, animated previews for all effect modes at the selected speed and brightness, and profile management. Selecting a GUI-compatible profile loads its colors, brightness, effect, period, and preview into the editor without touching the keyboard. Profiles with CLI-only palettes or durations remain applicable through **Profili Uygula**, but are not loaded into the editor. Native UI interactions have been exercised against temporary LED/configuration files, including all three effects under a real systemd user manager. Desktop Polkit authorization on the physical keyboard has not yet been exercised.
+The Qt Quick desktop panel provides independent transition start/end colors, animated previews for all effect modes at the selected speed and brightness, and profile management. Selecting a GUI-compatible profile loads its colors, brightness, effect, period, and preview into the editor without touching the keyboard. Profiles with CLI-only palettes or durations remain applicable through **Profili Uygula**, but are not loaded into the editor. The panel also polls the detached systemd service every five seconds and shows whether an effect is running; status-query failures remain explicitly unknown. GUI interactions have been exercised against temporary LED/configuration files. The desktop controller's `pkexec` path has also been exercised on the physical keyboard with a temporary Qt driver: a replacement transition was started and stopped, its prior LED values were restored, and the original effect was restarted with its original arguments. This does not establish support for other devices.
 
 ## Initial target
 
@@ -29,7 +29,7 @@ The CLI writes only these LED class attributes; it does not write unknown embedd
 
 ## Building
 
-Requires CMake and a C++17 compiler. Qt 6.5 or newer with Quick, QuickControls2, and Widgets development files enables the optional desktop target; the runtime also needs the Qt Quick Controls Basic, Layouts, Dialogs, and Shapes QML modules. If Qt is unavailable, CMake builds only the CLI. To explicitly disable the desktop target, configure with `-DBUILD_GUI=OFF`.
+Requires CMake and a C++17 compiler. Qt 6.5 or newer with Quick, QuickControls2, and Widgets development files enables the optional desktop target; Qt Test enables the GUI interaction regression. The runtime also needs the Qt Quick Controls Basic, Layouts, Dialogs, and Shapes QML modules. If Qt is unavailable, CMake builds only the CLI. To explicitly disable the desktop target, configure with `-DBUILD_GUI=OFF`.
 
 Detached operation also requires a running systemd manager with `systemd-run` and `systemctl`. Root invocations use the system manager; ordinary users use their user manager. `--foreground` runs an effect without systemd. The executable must remain at its original path for future service launches; no service installation or boot autostart is performed.
 
@@ -44,7 +44,7 @@ cmake --build build
 ./build/clevo-rgb-ui
 ```
 
-Run the panel as the normal desktop user, **not with sudo**. Keep `clevo-rgb-ui` and `clevo-rgb` together in the build directory. The panel reads LED state on startup; **Yenile** rereads it without replacing unsaved editor settings. The keyboard illustration previews the chosen mode, colors, speed, and brightness, not live device output.
+Run the panel as the normal desktop user, **not with sudo**. Keep `clevo-rgb-ui` and `clevo-rgb` together in the build directory. The panel reads LED state on startup; **Yenile** rereads it without replacing unsaved editor settings. It separately queries the matching systemd scope for a detached effect at startup, after operations, on refresh, and about every five seconds. **Efekt çalışıyor**, **Efekt yok**, and **Efekt bilinmiyor** distinguish running, inactive, and unavailable/failed status queries. The keyboard illustration previews the chosen mode, colors, speed, and brightness, not live device output.
 
 - Editing controls does not write hardware. **Uygula** applies the chosen color/brightness or starts the selected effect. In **Geçiş** mode the start and end colors are independently editable in the color card. The period is a complete effect cycle in milliseconds.
 - Selecting a saved profile loads supported settings into the editor and preview; the keyboard is unchanged until **Profili Uygula** or **Uygula**. Profiles using CLI-only palettes or finite durations are not loaded into the editor (a status message explains why); **Profili Uygula** still applies their original settings.
@@ -52,7 +52,7 @@ Run the panel as the normal desktop user, **not with sudo**. Keep `clevo-rgb-ui`
 - With a system tray, closing the window hides it; the tray icon or **Göster/Gizle** menu restores/hides it, and **Çıkış** quits. If no tray is available when starting, closing the window quits normally. No boot autostart is installed.
 - Sysfs actions use `pkexec`, so Polkit and an active desktop authentication agent are required. Authorization may prompt for a password; cancellation and CLI failures appear in the status area. Hover over the status text to read the full message.
 - Profile save/list/delete run as the desktop user, with the same storage and validation as the CLI. Existing-profile overwrite and deletion require confirmation. Applying a profile resolves that user's settings before elevation; it does not depend on `SUDO_UID` or root's configuration.
-- No device is required to save or manage profiles. Device-dependent apply buttons are disabled if the LED attributes cannot be read. There is no boot autostart or live effect-state monitor.
+- No device is required to save or manage profiles. Device-dependent apply buttons are disabled if the LED attributes cannot be read. **Efekti Durdur** remains available when status is unknown, but is disabled when no managed effect is running. There is no boot autostart.
 
 For a hardware-free desktop run, point `--device-dir` at a temporary directory containing `multi_intensity`, `brightness`, and `max_brightness`, as in the validation example below. Writable temporary directories run CLI operations without elevation under the systemd user manager:
 
@@ -174,10 +174,10 @@ rm -r "$device"
 
 Run `./build/clevo-rgb --help` for options. `--device-dir PATH` selects another LED sysfs directory and can also point to a temporary directory for testing.
 
-With Python 3 available at CMake configuration time, run the isolated profile boundary regressions:
+With Python 3 available at CMake configuration time, the isolated profile boundary regression is registered. With Qt Test available, the GUI interaction regression also runs with a real controller, QML, CLI, and temporary LED/profile files; its systemd query is isolated so it cannot stop a user's service:
 
 ```sh
 ctest --test-dir build --output-on-failure
 ```
 
-These checks use temporary configuration/LED files and do not write to the physical keyboard or require a running systemd manager.
+These checks do not write to the physical keyboard. Physical-device Polkit verification is a separate interactive operation requiring desktop authentication; the recorded hardware test above was performed outside the automated suite.

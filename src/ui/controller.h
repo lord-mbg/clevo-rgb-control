@@ -4,6 +4,7 @@
 #include <QObject>
 #include <QProcess>
 #include <QStringList>
+#include <QTimer>
 #include <QVariantMap>
 
 class Controller final : public QObject {
@@ -16,8 +17,10 @@ class Controller final : public QObject {
     Q_PROPERTY(QStringList profiles READ profiles NOTIFY profilesChanged)
     Q_PROPERTY(QString statusMessage READ statusMessage NOTIFY statusChanged)
     Q_PROPERTY(bool error READ error NOTIFY statusChanged)
+    Q_PROPERTY(QString effectStatus READ effectStatus NOTIFY effectStatusChanged)
 public:
     explicit Controller(QString cliPath, QString deviceDir, QObject* parent = nullptr);
+    ~Controller() override;
     bool busy() const { return m_process.state() != QProcess::NotRunning; }
     bool deviceAvailable() const { return m_deviceAvailable; }
     int maxBrightness() const { return m_maxBrightness; }
@@ -26,6 +29,7 @@ public:
     QStringList profiles() const { return m_profiles; }
     QString statusMessage() const { return m_status; }
     bool error() const { return m_error; }
+    QString effectStatus() const { return m_effectStatus; }
     Q_INVOKABLE void refresh();
     Q_INVOKABLE void apply(const QString& color, const QString& targetColor, int brightness,
                            const QString& effect, int periodMs);
@@ -41,16 +45,22 @@ signals:
     void deviceChanged();
     void profilesChanged();
     void statusChanged();
+    void effectStatusChanged();
 private:
     QStringList lightingArguments(const QString& color, const QString& targetColor,
                                   int brightness, const QString& effect, int periodMs);
     void run(QStringList arguments, bool hardware, const QString& successMessage);
+    bool needsPrivilegedCli() const;
+    void probeEffectStatus();
+    void setEffectStatus(const QString& status);
     void readDevice();
     bool readProfiles();
     void setStatus(const QString& message, bool error = false);
     QString m_cliPath;
     QString m_deviceDir;
     QProcess m_process;
+    QProcess m_statusProcess;
+    QTimer m_effectStatusTimer;
     bool m_deviceAvailable{false};
     int m_maxBrightness{255};
     int m_brightness{0};
@@ -58,5 +68,6 @@ private:
     QStringList m_profiles;
     QString m_status;
     QString m_successMessage;
+    QString m_effectStatus{QStringLiteral("unknown")};
     bool m_error{false};
 };

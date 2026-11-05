@@ -10,9 +10,9 @@ The CLI in `src/main.cpp`, `src/effects.cpp`, `src/service.cpp`, and `src/profil
 
 ## Files & Commands
 
-- `CMakeLists.txt` configures the CLI, optional Qt 6.5+ GUI (`BUILD_GUI`), and Python profile-boundary tests.
+- `CMakeLists.txt` configures the CLI, optional Qt 6.5+ GUI (`BUILD_GUI`), Python profile-boundary tests, and optional Qt Test GUI interaction tests.
 - `README.md` documents verified behavior, build/runtime prerequisites, and hardware-free smoke instructions.
-- `tests/test_profiles.py` exercises profile validation and storage boundaries.
+- `tests/test_profiles.py` and `tests/gui_interactions.cpp` exercise profile safety and actual QML/controller/CLI interactions on temporary LED files.
 - `.gitignore` excludes build outputs and native artifacts.
 - Build: `cmake -S . -B build && cmake --build build`.
 - Test: `ctest --test-dir build --output-on-failure`.
