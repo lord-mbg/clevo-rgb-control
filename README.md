@@ -31,7 +31,7 @@ The CLI writes only these LED class attributes; it does not write unknown embedd
 
 Requires CMake and a C++17 compiler. Qt 6.5 or newer with Quick, QuickControls2, and Widgets development files enables the optional desktop target; Qt Test enables the GUI interaction regression. The runtime also needs the Qt Quick Controls Basic, Layouts, Dialogs, and Shapes QML modules. If Qt is unavailable, CMake builds only the CLI. To explicitly disable the desktop target, configure with `-DBUILD_GUI=OFF`.
 
-Detached operation also requires a running systemd manager with `systemd-run` and `systemctl`. Root invocations use the system manager; ordinary users use their user manager. `--foreground` runs an effect without systemd. The executable must remain at its original path for future service launches; no service installation or boot autostart is performed.
+Detached operation also requires a running systemd manager with `systemd-run` and `systemctl`. Root invocations use the system manager; ordinary users use their user manager. `--foreground` runs an effect without systemd. The executable must remain at its original path for future service launches; no effect service installation or boot-time restart is performed.
 
 ```sh
 cmake -S . -B build
@@ -49,16 +49,31 @@ Run the panel as the normal desktop user, **not with sudo**. Keep `clevo-rgb-ui`
 - Editing controls does not write hardware. **Uygula** applies the chosen color/brightness or starts the selected effect. In **Geçiş** mode the start and end colors are independently editable in the color card. The period is a complete effect cycle in milliseconds.
 - Selecting a saved profile loads supported settings into the editor and preview; the keyboard is unchanged until **Profili Uygula** or **Uygula**. Profiles using CLI-only palettes or finite durations are not loaded into the editor (a status message explains why); **Profili Uygula** still applies their original settings.
 - **Efekti Durdur** stops the detached worker and restores its initial values. Closing the panel does not stop an already detached effect.
-- With a system tray, closing the window hides it; the tray icon or **Göster/Gizle** menu restores/hides it, and **Çıkış** quits. If no tray is available when starting, closing the window quits normally. No boot autostart is installed.
+- With a system tray, closing the window hides it; the tray icon or **Göster/Gizle** menu restores/hides it, and **Çıkış** quits. If no tray is available when starting, closing the window quits normally.
 - Sysfs actions use `pkexec`, so Polkit and an active desktop authentication agent are required. Authorization may prompt for a password; cancellation and CLI failures appear in the status area. Hover over the status text to read the full message.
 - Profile save/list/delete run as the desktop user, with the same storage and validation as the CLI. Existing-profile overwrite and deletion require confirmation. Applying a profile resolves that user's settings before elevation; it does not depend on `SUDO_UID` or root's configuration.
-- No device is required to save or manage profiles. Device-dependent apply buttons are disabled if the LED attributes cannot be read. **Efekti Durdur** remains available when status is unknown, but is disabled when no managed effect is running. There is no boot autostart.
+- No device is required to save or manage profiles. Device-dependent apply buttons are disabled if the LED attributes cannot be read. **Efekti Durdur** remains available when status is unknown, but is disabled when no managed effect is running.
 
 For a hardware-free desktop run, point `--device-dir` at a temporary directory containing `multi_intensity`, `brightness`, and `max_brightness`, as in the validation example below. Writable temporary directories run CLI operations without elevation under the systemd user manager:
 
 ```sh
 ./build/clevo-rgb-ui --device-dir /path/to/temporary-led-directory
 ```
+
+### Starting with the desktop session
+
+An XDG autostart entry launches the panel as the signed-in user, without touching the keyboard or requesting privilege at login. On this workstation, `~/.config/autostart/clevo-rgb-ui.desktop` points to the built panel. For another installation, use its own absolute executable path in both fields:
+
+```ini
+[Desktop Entry]
+Type=Application
+Name=Clevo RGB Control
+Exec=/absolute/path/to/clevo-rgb-control/build/clevo-rgb-ui
+TryExec=/absolute/path/to/clevo-rgb-control/build/clevo-rgb-ui
+Terminal=false
+```
+
+This starts the panel at graphical login, **not** the RGB effect at boot. Effects are transient systemd units; a reboot does not restart them. Automatically applying a hardware profile would require a separate privileged setup and must not bypass Polkit. Keep other lighting software from writing the same LED simultaneously; do not disable a whole power-management daemon solely to change its keyboard behavior.
 
 ## Usage
 
